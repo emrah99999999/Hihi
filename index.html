@@ -64,7 +64,8 @@
 <body>
     <h1>🇬🇧 English Tutor</h1>
     <select id="model-select">
-        <option value="Xenova/TinyLlama-1.1B-Chat-v1.0">TinyLlama (fast, 600MB)</option>
+        <option value="Xenova/llama2.c-stories15M">TinyStories (15MB, instant)</option>
+        <option value="Xenova/TinyLlama-1.1B-Chat-v1.0">TinyLlama (600MB, better)</option>
     </select>
     <div id="chat-box"></div>
     <p id="status" class="status">Initializing...</p>
@@ -72,8 +73,7 @@
     <button id="speak-btn" disabled>🎤 Press & Speak English</button>
 
     <script type="module">
-        // ====== بارگذاری کتابخونه از فایل محلی ======
-        // (فایل transformers.min.js باید توی ریشهٔ مخزن وجود داشته باشه)
+        // بارگذاری از فایل محلی (transformers.min.js باید توی ریشه باشه)
         import { pipeline } from './transformers.min.js';
 
         const chatBox = document.getElementById('chat-box');
@@ -86,14 +86,12 @@
         let generator = null;
         let isListening = false;
 
-        // تشخیص گفتار
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const recognition = new SpeechRecognition();
         recognition.lang = 'en-US';
         recognition.interimResults = false;
         recognition.maxAlternatives = 1;
 
-        // متن به صدا
         const synth = window.speechSynthesis;
 
         function speak(text) {
@@ -103,9 +101,8 @@
             synth.speak(utterance);
         }
 
-        // بارگذاری مدل با درصد پیشرفت
         async function loadModel(modelName) {
-            statusDiv.textContent = 'Loading model... (this may take a minute)';
+            statusDiv.textContent = 'Loading model...';
             progressBar.style.display = 'block';
             progressFill.style.width = '0%';
             speakBtn.disabled = true;
@@ -116,7 +113,7 @@
                         if (progress.status === 'progress') {
                             const percent = Math.round((progress.loaded / progress.total) * 100);
                             progressFill.style.width = percent + '%';
-                            statusDiv.textContent = `Downloading model: ${percent}%`;
+                            statusDiv.textContent = `Downloading: ${percent}%`;
                         }
                     }
                 });
@@ -124,20 +121,19 @@
                 progressBar.style.display = 'none';
                 speakBtn.disabled = false;
             } catch (err) {
-                statusDiv.textContent = 'Error loading model: ' + err.message;
+                statusDiv.textContent = 'Error: ' + err.message;
                 progressBar.style.display = 'none';
                 console.error(err);
             }
         }
 
-        // بارگذاری اولیه
+        // بارگذاری مدل پیش‌فرض (TinyStories 15MB)
         loadModel(modelSelect.value);
 
         modelSelect.addEventListener('change', () => {
             loadModel(modelSelect.value);
         });
 
-        // دکمهٔ میکروفن
         speakBtn.addEventListener('click', () => {
             if (isListening) return;
             recognition.start();
@@ -155,20 +151,19 @@
             speakBtn.textContent = '🎤 Press & Speak English';
 
             if (!generator) {
-                addMessage('System', 'Model not loaded yet.', 'ai-msg');
+                addMessage('System', 'Model not loaded.', 'ai-msg');
                 return;
             }
 
             const prompt = `<|system|>
-You are a friendly English tutor and language partner.
-The user is a beginner. Speak simply, correct mistakes gently, encourage them. Always reply in English.</s>
+You are a friendly English tutor. The user is a beginner. Speak simply, correct mistakes gently, encourage. Always reply in English.</s>
 <|user|>
 ${transcript}</s>
 <|assistant|>`;
 
             try {
                 const output = await generator(prompt, {
-                    max_new_tokens: 100,
+                    max_new_tokens: 80,
                     temperature: 0.7,
                     do_sample: true,
                 });
@@ -178,13 +173,13 @@ ${transcript}</s>
                 speak(assistantReply);
                 statusDiv.textContent = 'Ready.';
             } catch (error) {
-                addMessage('System', 'Sorry, an error occurred.', 'ai-msg');
-                statusDiv.textContent = 'Error. Please refresh.';
+                addMessage('System', 'Sorry, error.', 'ai-msg');
+                statusDiv.textContent = 'Error. Refresh.';
             }
         });
 
         recognition.addEventListener('error', (event) => {
-            addMessage('System', 'Microphone error: ' + event.error, 'ai-msg');
+            addMessage('System', 'Mic error: ' + event.error, 'ai-msg');
             isListening = false;
             speakBtn.textContent = '🎤 Press & Speak English';
         });
@@ -192,7 +187,7 @@ ${transcript}</s>
         function addMessage(sender, text, cssClass) {
             const p = document.createElement('p');
             p.className = cssClass;
-            p.textContent = `${sender}: ${text}`;
+            p.textContent = sender + ': ' + text;
             chatBox.appendChild(p);
             chatBox.scrollTop = chatBox.scrollHeight;
         }
