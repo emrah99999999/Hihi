@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🇬🇧 English Partner</title>
+    <title>🇬🇧 English Tutor</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -13,11 +13,17 @@
             background: #f0f8ff;
         }
         h1 { text-align: center; color: #1e3a8a; }
+        #model-select {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
         #chat-box {
             background: white;
             border-radius: 10px;
             padding: 15px;
-            min-height: 300px;
+            min-height: 250px;
             max-height: 400px;
             overflow-y: auto;
             border: 1px solid #ccc;
@@ -35,7 +41,6 @@
             border-radius: 5px;
             cursor: pointer;
         }
-        .error-msg { color: #dc2626; background: #fee2e2; padding: 10px; border-radius: 5px; }
         button {
             width: 100%;
             padding: 15px;
@@ -67,11 +72,18 @@
     </style>
 </head>
 <body>
-    <h1>🇬🇧 English Partner</h1>
+    <h1>🇬🇧 English Tutor</h1>
+    <select id="model-select">
+        <option value="Xenova/llama2.c-stories15M" data-size="15MB">TinyStories (15MB, works 100%)</option>
+        <option value="Xenova/opt-125m" data-size="250MB">OPT-125M (250MB)</option>
+        <option value="Xenova/Qwen1.5-0.5B-Chat" data-size="500MB">Qwen 0.5B Chat (500MB)</option>
+        <option value="Xenova/TinyLlama-1.1B-Chat-v1.0" data-size="600MB">TinyLlama 1.1B (600MB)</option>
+        <option value="Xenova/Llama-3.2-1B-Instruct" data-size="600MB">Llama 3.2 1B (600MB)</option>
+    </select>
     <div id="chat-box">
         <p class="tutor-msg">Hello! I'm your English partner. Press the button and talk to me. 😊</p>
     </div>
-    <p id="status" class="status">Loading model...</p>
+    <p id="status" class="status">Loading...</p>
     <div id="progress-bar"><div id="progress-fill"></div></div>
     <button id="speak-btn" disabled>🎤 Press & Speak English</button>
 
@@ -81,11 +93,13 @@
         const chatBox = document.getElementById('chat-box');
         const statusDiv = document.getElementById('status');
         const speakBtn = document.getElementById('speak-btn');
+        const modelSelect = document.getElementById('model-select');
         const progressBar = document.getElementById('progress-bar');
         const progressFill = document.getElementById('progress-fill');
 
         let generator = null;
         let isListening = false;
+        const FALLBACK_MODEL = 'Xenova/llama2.c-stories15M'; // مدل تضمینی
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const recognition = new SpeechRecognition();
@@ -113,7 +127,6 @@
             const p = document.createElement('p');
             p.className = sender === 'You' ? 'user-msg' : 'tutor-msg';
             p.innerHTML = `<strong>${sender}:</strong> ${text} `;
-
             if (sender === 'Tutor') {
                 const btn = document.createElement('button');
                 btn.className = 'listen-btn';
@@ -121,46 +134,58 @@
                 btn.addEventListener('click', () => speak(text));
                 p.appendChild(btn);
             }
-
             chatBox.appendChild(p);
             chatBox.scrollTop = chatBox.scrollHeight;
-
-            if (autoSpeak && sender === 'Tutor') {
-                speak(text);
-            }
+            if (autoSpeak && sender === 'Tutor') speak(text);
         }
 
-        async function loadModel() {
-            const modelName = 'Xenova/opt-125m';
-            statusDiv.textContent = 'Loading OPT-125M... (~250MB)';
+        // بارگذاری مدل با fallback
+        async function loadModel(modelName) {
+            if (generator && generator.model && generator.model.name === modelName) {
+                statusDiv.textContent = 'Ready!';
+                return;
+            }
+            generator = null;
+            statusDiv.textContent = `Loading ${modelName}...`;
             progressBar.style.display = 'block';
             progressFill.style.width = '0%';
             speakBtn.disabled = true;
 
             try {
-                generator = await pipeline('text-generation', modelName, {
-                    progress_callback: (progress) => {
-                        if (progress.status === 'progress') {
-                            const percent = Math.round((progress.loaded / progress.total) * 100);
+                const gen = await pipeline('text-generation', modelName, {
+                    progress_callback: (p) => {
+                        if (p.status === 'progress') {
+                            const percent = Math.round((p.loaded / p.total) * 100);
                             progressFill.style.width = percent + '%';
                             statusDiv.textContent = `Downloading: ${percent}%`;
                         }
                     }
                 });
-                statusDiv.textContent = 'Ready! Press the button and speak.';
+                generator = gen;
+                statusDiv.textContent = 'Ready! Press and speak.';
                 progressBar.style.display = 'none';
                 speakBtn.disabled = false;
             } catch (err) {
-                progressBar.style.display = 'none';
-                statusDiv.textContent = 'Failed to load model.';
                 console.error(err);
-                addMessage('System', 'Could not load OPT model: ' + err.message, 'error-msg');
-                addMessage('System', 'This may be due to Safari memory limits. Try clearing Safari data and reloading.', 'error-msg');
-                addMessage('System', 'If it keeps failing, the 15MB TinyStories model is available as a fallback.', 'error-msg');
+                progressBar.style.display = 'none';
+                if (modelName !== FALLBACK_MODEL) {
+                    addMessage('System', `Failed to load ${modelName}. Falling back to TinyStories.`);
+                    // ریست و تلاش برای مدل کوچک
+                    modelSelect.value = FALLBACK_MODEL;
+                    return loadModel(FALLBACK_MODEL);
+                } else {
+                    statusDiv.textContent = 'Critical error. Refresh.';
+                    addMessage('System', 'Failed to load fallback model. Please reload.');
+                }
             }
         }
 
-        loadModel();
+        // شروع با مدل پیش‌فرض (TinyStories)
+        loadModel(FALLBACK_MODEL);
+
+        modelSelect.addEventListener('change', () => {
+            loadModel(modelSelect.value);
+        });
 
         speakBtn.addEventListener('click', () => {
             if (isListening || !generator) return;
@@ -179,26 +204,24 @@
             isListening = false;
             speakBtn.textContent = '🎤 Press & Speak English';
 
-            // پرامپت مخصوص OPT (از فرمت ساده استفاده می‌کنیم چون OPT دستورالعمل‌های خاصی ندارد)
-            const prompt = `You are a kind English tutor. The user is a beginner. Reply in simple English, correct mistakes gently.
+            const systemPrompt = `You are a kind English tutor. The user is a beginner. Reply in 1-2 short English sentences. Correct mistakes gently.`;
 
-User: ${userText}
-Tutor:`;
+            // فرمت پرامپت بسته به مدل (برای سادگی از یک فرمت عمومی استفاده می‌کنیم)
+            const prompt = `<|system|>\n${systemPrompt}\n</s>\n<|user|>\n${userText}\n</s>\n<|assistant|>`;
 
             try {
                 const output = await generator(prompt, {
-                    max_new_tokens: 50,
-                    temperature: 0.6,
+                    max_new_tokens: 60,
+                    temperature: 0.7,
                     do_sample: true,
                     repetition_penalty: 1.2,
                 });
                 const generated = output[0].generated_text;
-                // استخراج پاسخ بعد از "Tutor:"
-                const reply = generated.split('Tutor:').pop().trim();
+                const reply = generated.split('<|assistant|>').pop().trim();
                 addMessage('Tutor', reply, true);
                 statusDiv.textContent = 'Ready.';
             } catch (error) {
-                addMessage('System', 'Sorry, I had a problem. Please try again.', 'tutor-msg');
+                addMessage('System', 'Error generating response.', 'tutor-msg');
                 statusDiv.textContent = 'Error.';
             }
         });
