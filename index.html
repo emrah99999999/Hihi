@@ -41,6 +41,7 @@
             border-radius: 5px;
             cursor: pointer;
         }
+        .error-msg { color: #dc2626; background: #fee2e2; padding: 10px; border-radius: 5px; }
         button {
             width: 100%;
             padding: 15px;
@@ -74,8 +75,9 @@
 <body>
     <h1>🇬🇧 English Tutor</h1>
     <select id="model-select">
-        <option value="Xenova/llama2.c-stories15M">TinyStories (15MB, instant)</option>
-        <option value="Xenova/TinyLlama-1.1B-Chat-v1.0">TinyLlama (600MB, better)</option>
+        <option value="Xenova/Llama-3.2-1B-Instruct" selected>Llama 3.2 1B (strong, ~600MB)</option>
+        <option value="Xenova/TinyLlama-1.1B-Chat-v1.0">TinyLlama 1.1B (backup)</option>
+        <option value="Xenova/llama2.c-stories15M">TinyStories 15MB (fast)</option>
     </select>
     <div id="chat-box"></div>
     <p id="status" class="status">Initializing...</p>
@@ -104,25 +106,55 @@
         const synth = window.speechSynthesis;
 
         function speak(text) {
+            synth.cancel(); // قطع هر پخش قبلی
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'en-US';
             utterance.rate = 0.9;
             synth.speak(utterance);
         }
 
-        // فعال‌سازی صدا با یه جملهٔ خیلی کوتاه بی‌صدا
+        // باز کردن قفل صدا (برای سافاری)
         function unlockAudio() {
             const u = new SpeechSynthesisUtterance('');
             u.volume = 0;
-            u.rate = 1;
             synth.speak(u);
         }
 
+        // نمایش پیام در کادر چت
+        function addMessage(sender, text, cssClass, autoSpeak = false) {
+            const p = document.createElement('p');
+            p.className = cssClass;
+            p.innerHTML = `${sender}: ${text} `;
+
+            if (sender === 'Tutor') {
+                const btn = document.createElement('button');
+                btn.className = 'listen-btn';
+                btn.textContent = '🔊 Listen';
+                btn.addEventListener('click', () => speak(text));
+                p.appendChild(btn);
+            }
+
+            chatBox.appendChild(p);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            if (autoSpeak && sender === 'Tutor') {
+                speak(text);
+            }
+        }
+
+        // بارگذاری مدل با مدیریت خطای بهتر
         async function loadModel(modelName) {
+            // اگر قبلاً مدلی بارگذاری شده و همون مدل انتخاب شده، کاری نکن
+            if (generator && generator.model && generator.model.name === modelName) {
+                statusDiv.textContent = 'Ready! Tap the button and speak.';
+                return;
+            }
+
             statusDiv.textContent = 'Loading model...';
             progressBar.style.display = 'block';
             progressFill.style.width = '0%';
             speakBtn.disabled = true;
+            generator = null; // ری‌ست
 
             try {
                 generator = await pipeline('text-generation', modelName, {
@@ -138,12 +170,19 @@
                 progressBar.style.display = 'none';
                 speakBtn.disabled = false;
             } catch (err) {
-                statusDiv.textContent = 'Error: ' + err.message;
-                progressBar.style.display = 'none';
                 console.error(err);
+                statusDiv.textContent = 'Failed to load model.';
+                progressBar.style.display = 'none';
+                addMessage('System', 'Could not load model: ' + err.message, 'error-msg');
+                // اگر مدل بزرگ خطا داد، پیشنهاد مدل کوچک
+                if (modelName.includes('1B') || modelName.includes('TinyLlama')) {
+                    addMessage('System', 'Try the TinyStories 15MB model instead.', 'error-msg');
+                }
+                speakBtn.disabled = true;
             }
         }
 
+        // بارگذاری پیش‌فرض
         loadModel(modelSelect.value);
 
         modelSelect.addEventListener('change', () => {
@@ -152,8 +191,8 @@
 
         // دکمه ضبط صدا
         speakBtn.addEventListener('click', () => {
-            if (isListening) return;
-            unlockAudio(); // قفل صدا رو باز کن
+            if (isListening || !generator) return;
+            unlockAudio();
             recognition.start();
             isListening = true;
             speakBtn.textContent = '🎧 Listening...';
@@ -169,60 +208,41 @@
             speakBtn.textContent = '🎤 Press & Speak English';
 
             if (!generator) {
-                addMessage('System', 'Model not loaded.', 'ai-msg');
+                addMessage('System', 'No model loaded. Please select a model and wait for "Ready".', 'ai-msg');
                 return;
             }
 
+            // پرامپت بهبودیافته برای پارتنر زبان
             const prompt = `<|system|>
-You are a friendly English tutor. The user is a beginner. Speak simply, correct mistakes gently, encourage. Always reply in English.</s>
+You are a friendly English tutor. The user is a beginner. Speak in simple, short sentences. Correct their grammar and pronunciation gently. Always reply in English. If the user makes a mistake, repeat the corrected sentence and explain briefly. Encourage them.</s>
 <|user|>
 ${transcript}</s>
 <|assistant|>`;
 
             try {
                 const output = await generator(prompt, {
-                    max_new_tokens: 80,
+                    max_new_tokens: 100,
                     temperature: 0.7,
                     do_sample: true,
                 });
                 const generatedText = output[0].generated_text;
                 const assistantReply = generatedText.split('<|assistant|>').pop().trim();
-                addMessage('Tutor', assistantReply, 'ai-msg', true); // پخش خودکار
+                addMessage('Tutor', assistantReply, 'ai-msg', true);
                 statusDiv.textContent = 'Ready.';
             } catch (error) {
-                addMessage('System', 'Sorry, error.', 'ai-msg');
-                statusDiv.textContent = 'Error. Refresh.';
+                addMessage('System', 'Sorry, error generating response.', 'ai-msg');
+                statusDiv.textContent = 'Error. Please try again.';
             }
         });
 
         recognition.addEventListener('error', (event) => {
-            addMessage('System', 'Mic error: ' + event.error, 'ai-msg');
+            addMessage('System', 'Microphone error: ' + event.error, 'ai-msg');
             isListening = false;
             speakBtn.textContent = '🎤 Press & Speak English';
         });
 
-        function addMessage(sender, text, cssClass, autoSpeak = false) {
-            const p = document.createElement('p');
-            p.className = cssClass;
-            p.innerHTML = `${sender}: ${text} `;
-
-            // دکمهٔ گوش دادن برای جواب‌های معلم
-            if (sender === 'Tutor') {
-                const btn = document.createElement('button');
-                btn.className = 'listen-btn';
-                btn.textContent = '🔊 Listen';
-                btn.addEventListener('click', () => speak(text));
-                p.appendChild(btn);
-            }
-
-            chatBox.appendChild(p);
-            chatBox.scrollTop = chatBox.scrollHeight;
-
-            // تلاش برای پخش خودکار
-            if (autoSpeak && sender === 'Tutor') {
-                speak(text);
-            }
-        }
+        // تلاش دوباره برای پخش صدا بعد از اولین تعامل (برای سافاری)
+        document.addEventListener('click', unlockAudio, { once: true });
     </script>
 </body>
 </html>
