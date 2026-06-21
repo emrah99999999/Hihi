@@ -131,8 +131,8 @@
         }
 
         async function loadModel() {
-            const modelName = 'Xenova/Qwen1.5-0.5B-Chat';
-            statusDiv.textContent = 'Loading Qwen 0.5B... (~500MB)';
+            const modelName = 'Xenova/opt-125m';
+            statusDiv.textContent = 'Loading OPT-125M... (~250MB)';
             progressBar.style.display = 'block';
             progressFill.style.width = '0%';
             speakBtn.disabled = true;
@@ -154,10 +154,9 @@
                 progressBar.style.display = 'none';
                 statusDiv.textContent = 'Failed to load model.';
                 console.error(err);
-                addMessage('System', 'Could not load Qwen model: ' + err.message, 'error-msg');
-                addMessage('System', 'Try again with a stable connection. If it still fails, the TinyStories model (15MB) is available as a fallback.', 'error-msg');
-                // پیشنهاد مدل ۱۵ مگابایتی فقط در صورت خطا
-                addMessage('System', 'You can switch to TinyStories by changing the URL to the older version.', 'error-msg');
+                addMessage('System', 'Could not load OPT model: ' + err.message, 'error-msg');
+                addMessage('System', 'This may be due to Safari memory limits. Try clearing Safari data and reloading.', 'error-msg');
+                addMessage('System', 'If it keeps failing, the 15MB TinyStories model is available as a fallback.', 'error-msg');
             }
         }
 
@@ -180,17 +179,11 @@
             isListening = false;
             speakBtn.textContent = '🎤 Press & Speak English';
 
-            const systemPrompt = `You are a kind English tutor and language partner. The user is a beginner. 
-- Always reply in English with ONE or TWO short sentences.
-- If the user's sentence has a grammar or vocabulary mistake, gently repeat the correct version and explain briefly.
-- If the user asks a question, answer it simply.
-- Encourage the user and keep the conversation friendly.
+            // پرامپت مخصوص OPT (از فرمت ساده استفاده می‌کنیم چون OPT دستورالعمل‌های خاصی ندارد)
+            const prompt = `You are a kind English tutor. The user is a beginner. Reply in simple English, correct mistakes gently.
 
-Example:
-User: "I goes to school."
-Tutor: "I go to school. We say 'go' with I/you/we/they. Keep it up!"`;
-
-            const prompt = `<|system|>\n${systemPrompt}\n</s>\n<|user|>\n${userText}\n</s>\n<|assistant|>`;
+User: ${userText}
+Tutor:`;
 
             try {
                 const output = await generator(prompt, {
@@ -200,7 +193,8 @@ Tutor: "I go to school. We say 'go' with I/you/we/they. Keep it up!"`;
                     repetition_penalty: 1.2,
                 });
                 const generated = output[0].generated_text;
-                const reply = generated.split('<|assistant|>').pop().trim();
+                // استخراج پاسخ بعد از "Tutor:"
+                const reply = generated.split('Tutor:').pop().trim();
                 addMessage('Tutor', reply, true);
                 statusDiv.textContent = 'Ready.';
             } catch (error) {
