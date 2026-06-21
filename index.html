@@ -50,6 +50,20 @@
             background: #9ca3af;
         }
         .status { color: #6b7280; text-align: center; margin: 10px 0; }
+        #progress-bar {
+            width: 100%;
+            height: 10px;
+            background: #e5e7eb;
+            border-radius: 5px;
+            margin-top: 5px;
+            display: none;
+        }
+        #progress-fill {
+            height: 100%;
+            background: #2563eb;
+            border-radius: 5px;
+            width: 0%;
+        }
     </style>
 </head>
 <body>
@@ -58,6 +72,7 @@
         <p class="tutor-msg">Hello! I'm your English partner. Press the button and talk to me. 😊</p>
     </div>
     <p id="status" class="status">Loading model...</p>
+    <div id="progress-bar"><div id="progress-fill"></div></div>
     <button id="speak-btn" disabled>🎤 Press & Speak English</button>
 
     <script type="module">
@@ -66,6 +81,8 @@
         const chatBox = document.getElementById('chat-box');
         const statusDiv = document.getElementById('status');
         const speakBtn = document.getElementById('speak-btn');
+        const progressBar = document.getElementById('progress-bar');
+        const progressFill = document.getElementById('progress-fill');
 
         let generator = null;
         let isListening = false;
@@ -78,7 +95,6 @@
 
         const synth = window.speechSynthesis;
 
-        // پخش صدا
         function speak(text) {
             synth.cancel();
             const u = new SpeechSynthesisUtterance(text);
@@ -87,14 +103,12 @@
             synth.speak(u);
         }
 
-        // قفل صدا برای سافاری
         function unlockAudio() {
             const u = new SpeechSynthesisUtterance('');
             u.volume = 0;
             synth.speak(u);
         }
 
-        // نمایش پیام
         function addMessage(sender, text, autoSpeak = false) {
             const p = document.createElement('p');
             p.className = sender === 'You' ? 'user-msg' : 'tutor-msg';
@@ -116,23 +130,39 @@
             }
         }
 
-        // بارگذاری مدل (فقط TinyStories، هیچ مدل دیگه‌ای لازم نیست)
         async function loadModel() {
-            statusDiv.textContent = 'Loading tutor...';
+            const modelName = 'Xenova/Qwen1.5-0.5B-Chat';
+            statusDiv.textContent = 'Loading Qwen 0.5B... (~500MB)';
+            progressBar.style.display = 'block';
+            progressFill.style.width = '0%';
             speakBtn.disabled = true;
+
             try {
-                generator = await pipeline('text-generation', 'Xenova/llama2.c-stories15M');
+                generator = await pipeline('text-generation', modelName, {
+                    progress_callback: (progress) => {
+                        if (progress.status === 'progress') {
+                            const percent = Math.round((progress.loaded / progress.total) * 100);
+                            progressFill.style.width = percent + '%';
+                            statusDiv.textContent = `Downloading: ${percent}%`;
+                        }
+                    }
+                });
                 statusDiv.textContent = 'Ready! Press the button and speak.';
+                progressBar.style.display = 'none';
                 speakBtn.disabled = false;
             } catch (err) {
-                statusDiv.textContent = 'Error: ' + err.message;
-                addMessage('System', 'Could not load the tutor. Refresh the page.', 'tutor-msg');
+                progressBar.style.display = 'none';
+                statusDiv.textContent = 'Failed to load model.';
+                console.error(err);
+                addMessage('System', 'Could not load Qwen model: ' + err.message, 'error-msg');
+                addMessage('System', 'Try again with a stable connection. If it still fails, the TinyStories model (15MB) is available as a fallback.', 'error-msg');
+                // پیشنهاد مدل ۱۵ مگابایتی فقط در صورت خطا
+                addMessage('System', 'You can switch to TinyStories by changing the URL to the older version.', 'error-msg');
             }
         }
 
         loadModel();
 
-        // دکمه ضبط
         speakBtn.addEventListener('click', () => {
             if (isListening || !generator) return;
             unlockAudio();
@@ -150,7 +180,6 @@
             isListening = false;
             speakBtn.textContent = '🎤 Press & Speak English';
 
-            // پرامپت جادویی: پارتنر مهربون و آموزگار
             const systemPrompt = `You are a kind English tutor and language partner. The user is a beginner. 
 - Always reply in English with ONE or TWO short sentences.
 - If the user's sentence has a grammar or vocabulary mistake, gently repeat the correct version and explain briefly.
@@ -165,10 +194,10 @@ Tutor: "I go to school. We say 'go' with I/you/we/they. Keep it up!"`;
 
             try {
                 const output = await generator(prompt, {
-                    max_new_tokens: 50,   // جواب‌ها کوتاه
+                    max_new_tokens: 50,
                     temperature: 0.6,
                     do_sample: true,
-                    repetition_penalty: 1.2,  // جلوگیری از تکرار
+                    repetition_penalty: 1.2,
                 });
                 const generated = output[0].generated_text;
                 const reply = generated.split('<|assistant|>').pop().trim();
@@ -186,7 +215,6 @@ Tutor: "I go to school. We say 'go' with I/you/we/they. Keep it up!"`;
             speakBtn.textContent = '🎤 Press & Speak English';
         });
 
-        // رفع قفل صدا با اولین کلیک کاربر
         document.addEventListener('click', unlockAudio, { once: true });
     </script>
 </body>
