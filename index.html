@@ -29,8 +29,18 @@
             border: 1px solid #ccc;
             margin-bottom: 15px;
         }
-        .user-msg { color: #2563eb; }
-        .ai-msg { color: #16a34a; }
+        .user-msg { color: #2563eb; margin-bottom: 10px; }
+        .ai-msg { color: #16a34a; margin-bottom: 10px; }
+        .listen-btn {
+            font-size: 14px;
+            padding: 5px 10px;
+            margin-left: 10px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
         button {
             width: 100%;
             padding: 15px;
@@ -73,7 +83,6 @@
     <button id="speak-btn" disabled>🎤 Press & Speak English</button>
 
     <script type="module">
-        // بارگذاری از فایل محلی (transformers.min.js باید توی ریشه باشه)
         import { pipeline } from './transformers.min.js';
 
         const chatBox = document.getElementById('chat-box');
@@ -99,6 +108,14 @@
             utterance.lang = 'en-US';
             utterance.rate = 0.9;
             synth.speak(utterance);
+        }
+
+        // فعال‌سازی صدا با یه جملهٔ خیلی کوتاه بی‌صدا
+        function unlockAudio() {
+            const u = new SpeechSynthesisUtterance('');
+            u.volume = 0;
+            u.rate = 1;
+            synth.speak(u);
         }
 
         async function loadModel(modelName) {
@@ -127,15 +144,16 @@
             }
         }
 
-        // بارگذاری مدل پیش‌فرض (TinyStories 15MB)
         loadModel(modelSelect.value);
 
         modelSelect.addEventListener('change', () => {
             loadModel(modelSelect.value);
         });
 
+        // دکمه ضبط صدا
         speakBtn.addEventListener('click', () => {
             if (isListening) return;
+            unlockAudio(); // قفل صدا رو باز کن
             recognition.start();
             isListening = true;
             speakBtn.textContent = '🎧 Listening...';
@@ -169,8 +187,7 @@ ${transcript}</s>
                 });
                 const generatedText = output[0].generated_text;
                 const assistantReply = generatedText.split('<|assistant|>').pop().trim();
-                addMessage('Tutor', assistantReply, 'ai-msg');
-                speak(assistantReply);
+                addMessage('Tutor', assistantReply, 'ai-msg', true); // پخش خودکار
                 statusDiv.textContent = 'Ready.';
             } catch (error) {
                 addMessage('System', 'Sorry, error.', 'ai-msg');
@@ -184,12 +201,27 @@ ${transcript}</s>
             speakBtn.textContent = '🎤 Press & Speak English';
         });
 
-        function addMessage(sender, text, cssClass) {
+        function addMessage(sender, text, cssClass, autoSpeak = false) {
             const p = document.createElement('p');
             p.className = cssClass;
-            p.textContent = sender + ': ' + text;
+            p.innerHTML = `${sender}: ${text} `;
+
+            // دکمهٔ گوش دادن برای جواب‌های معلم
+            if (sender === 'Tutor') {
+                const btn = document.createElement('button');
+                btn.className = 'listen-btn';
+                btn.textContent = '🔊 Listen';
+                btn.addEventListener('click', () => speak(text));
+                p.appendChild(btn);
+            }
+
             chatBox.appendChild(p);
             chatBox.scrollTop = chatBox.scrollHeight;
+
+            // تلاش برای پخش خودکار
+            if (autoSpeak && sender === 'Tutor') {
+                speak(text);
+            }
         }
     </script>
 </body>
